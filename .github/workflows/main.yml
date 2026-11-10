@@ -25,6 +25,8 @@ jobs:
               cp index.html www/index.html
             elif [ -f "MergeStudio-iOS-App-v2.html" ]; then
               cp MergeStudio-iOS-App-v2.html www/index.html
+            elif [ -f "MergeStudio-iOS-App.html" ]; then
+              cp MergeStudio-iOS-App.html www/index.html
             else
               FOUND_HTML=$(find . -maxdepth 3 -name "*.html" | head -n 1)
               if [ -n "$FOUND_HTML" ]; then
@@ -43,8 +45,12 @@ jobs:
           npx cap add ios
           npx cap sync ios
 
-      - name: Set App Icon in iOS Project
+      - name: Share Xcode Scheme & Set App Icon
         run: |
+          mkdir -p ios/App/App.xcodeproj/xcshareddata/xcschemes
+          if [ -f "ios/App/App.xcodeproj/xcschemes/App.xcscheme" ]; then
+            cp ios/App/App.xcodeproj/xcschemes/App.xcscheme ios/App/App.xcodeproj/xcshareddata/xcschemes/
+          fi
           if [ -f "www/icon-1024.png" ]; then
             ICON_SET="ios/App/App/Assets.xcassets/AppIcon.appiconset"
             if [ -d "$ICON_SET" ]; then
@@ -52,25 +58,23 @@ jobs:
             fi
           fi
 
-      - name: Build Unsigned .app with Xcode
+      - name: Build and Archive Unsigned .app with Xcode
         run: |
           cd ios/App
-          xcodebuild -project App.xcodeproj \
+          xcodebuild archive \
+            -project App.xcodeproj \
             -scheme App \
-            -configuration Release \
-            -sdk iphoneos \
             -destination "generic/platform=iOS" \
-            -derivedDataPath build \
+            -archivePath build/App.xcarchive \
             CODE_SIGN_IDENTITY="" \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO \
-            AD_HOC_CODE_SIGNING_ALLOWED=YES \
-            clean build
+            AD_HOC_CODE_SIGNING_ALLOWED=YES
 
-      - name: Package Payload into .ipa
+      - name: Export .app and Package into .ipa
         run: |
           mkdir -p Payload
-          cp -r ios/App/build/Build/Products/Release-iphoneos/App.app Payload/
+          cp -r ios/App/build/App.xcarchive/Products/Applications/App.app Payload/
           zip -r MergeStudio-Unsigned.ipa Payload
 
       - name: Upload Unsigned IPA Artifact
