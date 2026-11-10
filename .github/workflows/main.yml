@@ -1,21 +1,41 @@
-name: Build iOS App (.ipa)
+name: Build Unsigned iOS IPA
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [ "main", "master" ]
   workflow_dispatch:
 
 jobs:
   build-ipa:
     runs-on: macos-latest
     steps:
-      - name: Checkout Source
+      - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: '20'
+
+      - name: Auto-Prepare www Directory & Assets
+        run: |
+          mkdir -p www
+          if [ ! -f "www/index.html" ]; then
+            if [ -f "index.html" ]; then
+              cp index.html www/index.html
+            elif [ -f "MergeStudio-iOS-App-v2.html" ]; then
+              cp MergeStudio-iOS-App-v2.html www/index.html
+            else
+              FOUND_HTML=$(find . -maxdepth 3 -name "*.html" | head -n 1)
+              if [ -n "$FOUND_HTML" ]; then
+                cp "$FOUND_HTML" www/index.html
+              fi
+            fi
+          fi
+          [ -f "manifest.json" ] && [ ! -f "www/manifest.json" ] && cp manifest.json www/ || true
+          [ -f "icon-1024.png" ] && [ ! -f "www/icon-1024.png" ] && cp icon-1024.png www/ || true
+          [ -f "icon-512.png" ] && [ ! -f "www/icon-512.png" ] && cp icon-512.png www/ || true
+          [ -f "icon-180.png" ] && [ ! -f "www/icon-180.png" ] && cp icon-180.png www/ || true
 
       - name: Install Capacitor & Generate iOS Project
         run: |
@@ -23,21 +43,37 @@ jobs:
           npx cap add ios
           npx cap sync ios
 
-      - name: Build Unsigned .ipa with Xcode
+      - name: Set App Icon in iOS Project
+        run: |
+          if [ -f "www/icon-1024.png" ]; then
+            ICON_SET="ios/App/App/Assets.xcassets/AppIcon.appiconset"
+            if [ -d "$ICON_SET" ]; then
+              cp www/icon-1024.png "$ICON_SET/AppIcon-512@2x.png" || true
+            fi
+          fi
+
+      - name: Build Unsigned .app with Xcode
         run: |
           cd ios/App
-          if [ -d "App.xcworkspace" ]; then
-            xcodebuild -workspace App.xcworkspace -scheme App -configuration Release -sdk iphoneos -derivedDataPath build CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO AD_HOC_CODE_SIGNING_ALLOWED=YES DEVELOPMENT_TEAM=""
-          else
-            xcodebuild -project App.xcodeproj -scheme App -configuration Release -sdk iphoneos -derivedDataPath build CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO AD_HOC_CODE_SIGNING_ALLOWED=YES DEVELOPMENT_TEAM=""
-          fi
-          mkdir -p Payload
-          APP_PATH=$(find build -name "App.app" -type d | head -n 1)
-          cp -r "$APP_PATH" Payload/
-          zip -r ../../MergeStudioPro.ipa Payload
+          xcodebuild -project App.xcodeproj \
+            -scheme App \
+            -configuration Release \
+            -sdk iphoneos \
+            -derivedDataPath build \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            AD_HOC_CODE_SIGNING_ALLOWED=YES \
+            clean build
 
-      - name: Upload Ready .ipa File
+      - name: Package Payload into .ipa
+        run: |
+          mkdir -p Payload
+          cp -r ios/App/build/Build/Products/Release-iphoneos/App.app Payload/
+          zip -r MergeStudio-Unsigned.ipa Payload
+
+      - name: Upload Unsigned IPA Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: MergeStudioPro-iOS-IPA
-          path: MergeStudioPro.ipa
+          name: MergeStudio-Unsigned-IPA
+          path: MergeStudio-Unsigned.ipa
